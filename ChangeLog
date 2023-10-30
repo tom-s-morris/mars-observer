@@ -1,0 +1,84 @@
+astro_sara_pp/calc/README
+=========================
+
+* Mars_Meeus_p291.lua
+Test calculation for Mars. CML is in error by 0.25 degree, mainly due to
+neglecting precession for both Earth and Mars.
+* MarsObserver.cpp
+Add calculation of longitude of central meridian.
+* MarsDataLogger.cpp
+Data logger class (for tabular/CSV output).
+
+* MarsOpp.cpp
+* MarsObserver.cpp
+Fix calculation of solar longitude (Ls) in 'solarLongitude'.
+Fix bug in EphemerisUtils::find_zero. It assumed a decreasing function of time.
+
+* MarsOpp.cpp
+* LibEphcom.cpp
+* LibEphcom.h
+* tests/
+Temporarily disable the mean equinox correction as a) it's unimportant and b) it
+doesn't account for precession of the nodes/equinoxes.
+Add Jupiter series calculation (low accuracy).
+Add 'snapshotMode' to config for single date/validation against an Almanac,
+for example 'Ephemerides Astronomiques 2018'.
+
+* LibEphcom4.cpp
+Update the calculation/conversion to the mean equinox for the current epoch.
+Changes 2020 October 13th Mars opposition by ~3e-5 Julian days or
+~3 seconds.
+J2000.0:      2459136.47209, 13/10/2020 23:20, 1.41631879219 AU, 0.419233473053 AU, 22.3265 arcsec
+Mean equinox: 2459136.47212, 13/10/2020 23:20, 1.41631881839 AU, 0.419233506784 AU, 22.3265 arcsec
+
+* MarsOpp.cpp
+Add find_max_min function, used to calculate closest approach of a planet to
+Earth. Uses Golden section method to search the initial interval.
+
+* LReader.h
+* LReader.cpp
+Lua configuration reader. Specify date range and planet.
+Note: Jupiter 2022 opposition disagrees with Astronomy Now Yearbook value by 10 minutes:
+- Program: JPL DE432 ephemeris session started.
+  2459849.30757, 26/09/2022 19:23, 4.95490315866 AU, 3.9526406513 AU, 2.36804 arcsec
+- Magazine, p.96: 19:33
+
+* MarsObserver.h
+* MarsObserver.cpp
+Mars observables/physical ephemeris.
+
+* ephcomc.h
+* ephcomdll.h
+* ephcom.h
+
+LibEphcom4.h
+LibEphcom4.cpp
+Dynamically loads the Ephcom v4 library and provides an interface
+to calculate the geocentric planetary positions.
+API functions:
+- loadLib
+- initContext
+- deinitContext
+- computeGeocentricPos
+
+* Makefile
+
+* MarsOpp2.txt
+Mars Opposition data calculated from 2010 to 2020 inclusive.
+Ephemeris: DE405
+JPL Ephemeris library: libephcom-1.0
+
+* MarsOpp3.txt
+Mars Opposition data calculated from 2010 to 2020 inclusive.
+Ephemeris: DE405
+JPL Ephemeris library: libephcom-1.0
+
+* MarsOpp.cpp
+Compute oppositions of Mars from 2010 to 2030 using two passes.
+Interfaces with the JPL ephemeris library:
+- jpl_frontend.h
+API for use with libephcom-1.0, see above.
+- LibEphcom4.h
+API for use with ephcom-3.0.0, recently updated to version 4 (July 2020).
+See https://sourceforge.net/projects/timeephem
+
