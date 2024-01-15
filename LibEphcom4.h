@@ -53,6 +53,7 @@ private:
 	void *libDLL;
 	double tJDStart, tJDStop, tJDStep;
 	ephcom_object targetID;
+	ephcom_object secondaryID;
 	bool equinoxJ2000;
 
 	/* Internal API */
@@ -72,6 +73,9 @@ public:
 	/* Set target planet for subsequent computations */
 	int setObject(ephcom_object ephcomID);
 	ephcom_object getObject(void);
+	/* Set secondary planet for subsequent computations of e.g. conjunctions */
+	int setSecondaryObject(ephcom_object ephcomID);
+	ephcom_object getSecondaryObject(void);
 	void setMeanEquinox();
 
 	/* Combined geo+helio ephemeris data, as for original jpleph_compute_de405() */

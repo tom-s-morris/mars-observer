@@ -31,6 +31,8 @@ void MarsDataLogger::writeToCSVFile(const char *filename)
 		oss << ",";
 		oss << std::fixed << std::setprecision (4) << it->diameter;
 		oss << ",";
+		oss << std::fixed << std::setprecision (4) << it->separation;
+		oss << ",";
 		//oss << std::fixed << std::setprecision (3) << it->omega;
 		//oss << ",";
 		oss << std::fixed << std::setprecision (2) << it->L_S;

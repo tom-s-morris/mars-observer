@@ -93,6 +93,20 @@ void LReader::read(LConfig& config)
 		return;
 	}
 	config.ephcomID = lua_tointeger(L, -1);
+
+	/* read secondary planet/body for conjunctions */
+	lua_getglobal(L, "secondary");
+	if (!lua_isinteger(L, -1) ||
+		(lua_tointeger(L, -1) > EPHCOM_PLUTO &&
+		 lua_tointeger(L, -1) != EPHCOM_SUN))
+	{
+		std::cerr << "'secondary' is not a valid object (expecting index from "
+		          << EPHCOM_MERCURY << " to "
+		          << EPHCOM_PLUTO << ", or "
+		          << EPHCOM_SUN << " for the Sun)." << std::endl;
+		return;
+	}
+	config.secondaryID = lua_tointeger(L, -1);
 }
 
 void LReader::close()

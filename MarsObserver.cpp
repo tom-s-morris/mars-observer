@@ -114,8 +114,6 @@ double longitudeCM(jpl_PosDataVer2& geoData, double time, double tLight)
 	double zeta =  atan2(sin(delta0)*cos(delta)*cos(alpha0 - alpha) - sin(delta)*cos(delta0),
 		cos(delta)*sin(alpha0 - alpha) );
 
-	printf("(alpha, delta, zeta) = (%f, %f, %f)\n",
-		rad2deg(alpha), rad2deg(delta), rad2deg(zeta));
 	double omega = fmod(W - rad2deg(zeta), 360.0);
 
 	return omega;

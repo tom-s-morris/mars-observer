@@ -22,6 +22,7 @@ struct LConfig
 	int Tsnapshot[3];
 	double TFsnapshot;
 	int ephcomID;
+	int secondaryID;
 };
 
 struct lua_State;

@@ -11,6 +11,7 @@ struct MarsData
 	double   RA;     // right ascension
 	double   Dec;    // declination
 	double   diameter; // angular size (arcsec)
+	double   separation; // separation (arcmin) for e.g. conjunctions 
 	double   omega;  // longitude of central meridian (CM) (degrees)
 	double   L_S;    // solar longitude (degrees)
 	double   D_E;    // planetocentric declination of Earth

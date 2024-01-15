@@ -2,7 +2,7 @@
  * LibEphcom4.cpp
  * Dynamically loads the ephcom4 library and provides geocentric
  * positions used in the Mars opposition calculator.
- * Uses Alan Irwin's 'timeephem' library as at 1st July 2020.
+ * Uses Alan Irwin's 'timeephem' library as at 8th January 2024.
  */
 
 #include <iostream>
@@ -22,7 +22,7 @@ const char EphcomBaseDir[] =
 	"/home/thomas/astro/timeephem/ephcom";
 const char EphcomDLL[] = "build/src/libs/libephcomc.so";
 const char JPLDataFilename[] =
-	"/home/thomas/astro/timeephem/ephcom/de432/eph1980_2100.432";
+	"/home/thomas/astro/de441/linux_p1000p3000.441";
 
 /*** REFERENCE ROUTINES ***/
 void convert_ICRF_eq_to_ecliptic(const double *pos, double *pos_ecl);
@@ -146,6 +146,24 @@ ephcom_object LibEphcom4::getObject()
 	return targetID;
 }
 
+int LibEphcom4::setSecondaryObject(ephcom_object ephcomID)
+{
+	if (ephcomID > EPHCOM_ORDERED_INDICES)
+	{
+		std::cerr << "setSecondaryObject: Target object out of range. Expecting index from "
+		          << EPHCOM_MERCURY << " to "
+		          << EPHCOM_ORDERED_INDICES << ")." << std::endl;
+		return JPLEPH_ERR_TARGET_OUTOFRANGE;
+	}
+	secondaryID = ephcomID;
+	return JPLEPH_ERR_OK;
+}
+
+ephcom_object LibEphcom4::getSecondaryObject()
+{
+	return secondaryID;
+}
+
 void LibEphcom4::setMeanEquinox()
 {
 	equinoxJ2000 = false;
@@ -155,11 +173,12 @@ int LibEphcom4::computeDE(int target, const double time, jpl_PosData *data)
 {
 	if (time < tJDStart || time > tJDStop)
 	{
+		std::cerr << "computeDE: time outside available ephemeris range: " << time << std::endl;
 		return JPLEPH_ERR_TIME_OUTOFRANGE;
 	}
 	if (targetID >= EPHCOM_MAXOBJECTS)
 	{
-		std::cerr << "computeDE: new target: " << target << std::endl;
+		std::cerr << "computeDE: invalid target: " << target << std::endl;
 		targetID = static_cast<ephcom_object> (target);
 	}
 	ephcom_header header1;
@@ -226,6 +245,7 @@ int LibEphcom4::computeGeocentricPos(int target, const double time, jpl_PosDataV
 {
 	if (time < tJDStart || time > tJDStop)
 	{
+		std::cerr << "computeGeocentricPos: time outside available ephemeris range: " << time << std::endl;
 		return JPLEPH_ERR_TIME_OUTOFRANGE;
 	}
 
@@ -272,6 +292,7 @@ int LibEphcom4::computeHeliocentricPos(int target, const double time, jpl_PosDat
 {
 	if (time < tJDStart || time > tJDStop)
 	{
+		std::cerr << "computeHeliocentricPos: time outside available ephemeris range: " << time << std::endl;
 		return JPLEPH_ERR_TIME_OUTOFRANGE;
 	}
 	const double et2[2] = {time, 0.0};

@@ -18,6 +18,7 @@ Compute oppositions of Mars from 2010 to 2030 using two passes.
 #include <string>
 #include <vector>
 
+#include "EventsFinder.h"
 #include "LibEphcom4.h"
 #include "LReader.h"
 #include "MarsDataLogger.h"
@@ -27,6 +28,7 @@ Compute oppositions of Mars from 2010 to 2030 using two passes.
 
 
 using namespace std;
+using namespace EventsFinder;
 
 struct EphemDatum
 {
@@ -54,6 +56,8 @@ void calculateDataFromConfig(MarsOpp& planetOpp, LConfig& conf);
 void calendar_date_from_JD(double jdate, int *dmy, double *frac);
 void test_calendar_date_from_JD(void);
 double JD_from_calendar_date(double day, int month, int year);
+
+double arc_length(double a1, double a2, double d1, double d2);
 
 // Sets the date string from the ephemeris JD
 void EphemDatum::setTime(double time)
@@ -130,6 +134,7 @@ public:
 	{
 		Ephcom.initContext(EPHCOM_MARS);
 		MyPrint.Flags = Printing::PRINT_FLAG_LIST;
+		ephcomErrStat = 0;
 	}
 
 	~MarsOpp()
@@ -137,9 +142,11 @@ public:
 		Ephcom.deinitContext();	
 	}
 
-	void setObject(ephcom_object object) {
+	void setObject(ephcom_object object, ephcom_object object2) {
 		EphcomID = object;
 		Ephcom.setObject(object);
+		SecondaryID = object2;
+		Ephcom.setSecondaryObject(object2);
 	}
 
 	void generateEphem(double timeStart, double timeInterval, int numTimes, bool checkMethod);
@@ -151,20 +158,16 @@ public:
 private:
 	LibEphcom4 Ephcom;
 	ephcom_object EphcomID;
+	ephcom_object SecondaryID;
 	MarsDataLogger dataLog;
+	int ephcomErrStat;
 
 	/* modal flags */
 	static const int MODE_OPPOSITION = 1; /*!< Find oppositions in date range */
 	static const int MODE_CLOSEST = 2;    /*!< TODO: Find closest approaches (perihelia) in date range */
 	static const int MODE_EQUINOX = 4;    /*!< TODO: Find equinoxes in date range */
-	int mode = MODE_OPPOSITION | MODE_EQUINOX;
-
-	/** Bracketed time of opposition = [t1, t2]
-	 * y1 > 0, y2 < 0, t2 > t1
-	 */
-	double find_opposition(double t1, double t2, double y1, double y2);
-	double find_equinox(double t1, double t2, double y1, double y2, const double L0);
-	double find_closest_approach(double t1, double t2);
+	static const int MODE_CONJUNCTION = 8;/*!< Find conjunctions between two planets in date range */
+	int mode = MODE_CONJUNCTION;
 
 	struct Printing
 	{
@@ -180,177 +183,35 @@ private:
 /////////////////////////////////////////////////////////////////////
 
 
-namespace EphemerisUtils
-{
-	/** Method 1: Compute the longitude difference
-	 *	At opposition the planetary longitude matches the Earth's.
-	 *	For an eccentric orbit this is not necessarily the closest approach.
-	 */
-double delta_longitude(LibEphcom4& ephcom, double time)
-{
-	struct jpl_PosDataVer2 position_Earth, position_Mars;
-
-	ephcom.computeHeliocentricPos(EPHCOM_EARTH,       time, &position_Earth);
-	ephcom.computeHeliocentricPos(ephcom.getObject(), time, &position_Mars);
-	return position_Mars.longitude - position_Earth.longitude;
-}
-
-	/** Method 2: Compute the longitude difference using geocentric coords.
-	 *	Mars's longitude is 180 degrees from the Sun's.
-	 *	NOTE: Uses the mean equinox of the date.
-	 */
-double delta_longitude_mean_equinox(LibEphcom4& ephcom, const double time)
-{
-	struct jpl_PosDataVer2 position_Sun, position_Mars;
-	double delta;
-
-	ephcom.computeGeocentricPos(EPHCOM_SUN,         time, &position_Sun);
-	ephcom.computeGeocentricPos(ephcom.getObject(), time, &position_Mars);
-	delta = position_Mars.longitude - position_Sun.longitude + 180;
-	if (delta >  180) delta -= 360;
-	if (delta < -180) delta += 360;
-	return delta;
-}
-
-double solar_longitude(LibEphcom4& ephcom, const double time)
-{
-	struct jpl_PosDataVer2 position_Mars;
-	double longitude;
-
-	ephcom.computeHeliocentricPos(EPHCOM_MARS, time, &position_Mars);
-	longitude = solarLongitude(position_Mars, time);  /* Ls */
-	return longitude;
-}
-
-	/** Compute the geocentric distance (in AU).
-	 */
-double geo_distance(LibEphcom4& ephcom, double time)
-{
-	struct jpl_PosDataVer2 position_Mars;
-
-	ephcom.computeGeocentricPos(ephcom.getObject(), time, &position_Mars);
-	return position_Mars.radius;
-}
-
-	/**	Utility function. Finds root of f(t) = f0 in specified
-	 *	interval [t1, t2], y1=f(t1) changes sign to y2=f(t2)
-	 */
-inline
-double find_zero(double t1, double t2, double y1, double y2, const double f0,
-				 LibEphcom4& ephcom,
-				 double func(LibEphcom4&, const double) )
-{
-	double t3 = 0;
-
-	y1 -= f0; y2 -= f0;
-	for (int i=0; i<10; i++)
-	{
-		/* estimate the slope */
-		double m = (y2 - y1) / (t2 - t1);
-		t3 = t2 - (y2 / m);  /* new estimate of time of opposition, t1 < t3 < t2 */
-
-		if (t1 > t3 || t3 > t2)
-		{
-			/* Linear approx is no longer valid */
-			std::cerr << "Error: Convergence problems, giving up!" << endl;
-			std::cerr << std::setprecision(12) << t3 << " is not contained in [" << t1 << "," << t2 << "]" << endl;
-			break;
-		}
-
-		double delta = func(ephcom, t3) - f0;
-		if (fabs(delta) < 1e-4 || fabs(t2 - t1) < 1e-3)
-		{
-			//cout << "Converged after " << i << " iterations." << endl;
-			break;
-		}
-
-		if (((delta > 0) && (y1 > 0))
-			|| ((delta < 0) && (y1 < 0)))
-			{ t1 = t3; y1 = delta; } /* replace lower end-point */
-		else
-			{ t2 = t3; y2 = delta; } /* replace upper end-point */
-	}
-
-	return t3;
-}
-
-	/**	Utility function. Finds a minima/maxima of f'(t) = 0 in specified
-	 *	interval [t1, t2] using the Golden Section.
-	 */
-inline
-double find_max_min(double t1, double t2,
-				    LibEphcom4& ephcom,
-				    double func(LibEphcom4&, double) )
-{
-	double t3 = 0, t4 = 0;
-	const double gr = (sqrt(5) + 1) / 2;
-
-	for (int i=0; i<50; i++)
-	{
-		// sample points based on Golden section
-		t3 = t2 - (t2 - t1) / gr;
-		t4 = t1 + (t2 - t1) / gr;
-
-		double y3 = func(ephcom, t3);
-		double y4 = func(ephcom, t4);
-
-		if (y3 < y4) {
-			t2 = t4;
-		} else {
-			t1 = t3;
-		}
-
-		if ((t2 - t1) < 1e-3) {
-			//cout << "Converged after " << i << " iterations." << endl;
-			break;
-		}
-	}
-
-	return (t1 + t2) / 2.0;
-}
-}
-
-double MarsOpp::find_opposition(double t1, double t2, double y1, double y2)
-{
-	return EphemerisUtils::find_zero(t1, t2, y1, y2, 0, Ephcom, EphemerisUtils::delta_longitude_mean_equinox);
-}
-
-double MarsOpp::find_equinox(double t1, double t2, double y1, double y2, const double L0)
-{
-	/* TODO: check discontinuity around Ls = 360 degrees */
-	return EphemerisUtils::find_zero(t1, t2, y1, y2, L0, Ephcom, EphemerisUtils::solar_longitude);
-}
-
-double MarsOpp::find_closest_approach(double t1, double t2)
-{
-	return EphemerisUtils::find_max_min(t1, t2, Ephcom, EphemerisUtils::geo_distance);
-}
-
 void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes, bool checkMethod)
 {
 	int			idxList = 0, i;
-	double		time, timeEnd = 2473459.5; /* 1st Jan 2060 */
-
+	double		time;
 
 	/* iterate over number of time samples */
-	double lastDelta = 0;
+	double lastDelta = 0, lastDeltaConj = 0;
 	double lastLong = 0, solarLong;
 	for(i=0; i<numTimes; i++)
 	{
 		/* calculate the current time */
 		time = timeStart + i*timeInterval;
 
-		if (time > timeEnd) break;
+		if (ephcomErrStat != 0) {
+		  cerr << "An error occurred during the JPL ephemeris calculation: " 
+		    << "iter = " << i << ", time = " << time
+		    << endl;
+		  break;
+		}
 
 	if (mode & MODE_OPPOSITION)
 	{
 		/* Look for opposition */
-		double deltaLong = EphemerisUtils::delta_longitude_mean_equinox(Ephcom, time);
+		double deltaLong = EventsFinder::delta_longitude(Ephcom, time);
 		//cout << std::setprecision (12) << time << ", " << deltaLong << endl;
 		if (-30 < deltaLong && deltaLong < 0 && lastDelta > 0)
 		{
 			/* Earth has surpassed Mars => opposition occurred */
-			double timeOpp = find_opposition(time - timeInterval, time, lastDelta, deltaLong);
+			double timeOpp = find_opposition(Ephcom, time - timeInterval, time, lastDelta, deltaLong);
 			MyPrint.Prefix = string("[OPP] "); // mark 'opposition'
 			computeEphem(timeOpp);
 			MyPrint.Prefix = string(""); // reset label
@@ -368,16 +229,31 @@ void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes,
 		lastDelta = deltaLong;
 	}
 
+	if (mode & MODE_CONJUNCTION)
+	{
+		/* Look for conjunction */
+		double deltaLong = EventsFinder::conjunction_in_longitude(Ephcom, time);
+		//cout << std::setprecision (12) << time << ", " << deltaLong << endl;
+		if (deltaLong < 15 && deltaLong > 0 && lastDeltaConj < 0)
+		{
+			double timeOpp = find_conjunction(Ephcom, time - timeInterval, time, lastDeltaConj, deltaLong);
+			MyPrint.Prefix = string("[CONJ]"); // mark 'conjunction'
+			computeEphem(timeOpp);
+			MyPrint.Prefix = string(""); // reset label
+		}
+		lastDeltaConj = deltaLong;
+	}
+
 	if (mode & MODE_CLOSEST)
 	{
 		/* Look for close approach. Needs two historical values */
-		double delta0 = EphemerisUtils::geo_distance(Ephcom, time - timeInterval);
-		double delta1 = EphemerisUtils::geo_distance(Ephcom, time);
-		double delta2 = EphemerisUtils::geo_distance(Ephcom, time + timeInterval);
+		double delta0 = EventsFinder::geo_distance(Ephcom, time - timeInterval);
+		double delta1 = EventsFinder::geo_distance(Ephcom, time);
+		double delta2 = EventsFinder::geo_distance(Ephcom, time + timeInterval);
 		if (delta0 > delta1 && delta1 < delta2)
 		{
 			/* Minima found. Search interval. */
-			double timeCloseApproach = find_closest_approach(time - timeInterval/2, time + timeInterval/2);
+			double timeCloseApproach = find_closest_approach(Ephcom, time - timeInterval/2, time + timeInterval/2);
 			MyPrint.Prefix = string("[CLO] "); // mark 'close approach'
 			computeEphem(timeCloseApproach);
 			MyPrint.Prefix = string(""); // reset label
@@ -386,7 +262,7 @@ void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes,
 
 	if (mode & MODE_EQUINOX)
 	{
-		double solarLong = EphemerisUtils::solar_longitude(Ephcom, time);
+		double solarLong = EventsFinder::solar_longitude(Ephcom, time);
 		//cout << std::setprecision (12) << time << ", " << solarLong << endl;
 		if ((lastLong > 345 && solarLong > 0 && solarLong < 15) ||
 			(lastLong < 90 && solarLong > 90 && solarLong < 105) ||
@@ -398,25 +274,25 @@ void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes,
 			{
 				/* Spring equinox occurred */
 				lastLong -= 360;
-				timeEquinox = find_equinox(time - timeInterval, time, lastLong, solarLong, 0);
+				timeEquinox = find_equinox(Ephcom, time - timeInterval, time, lastLong, solarLong, 0);
 				MyPrint.Prefix = string("[SPR] ");
 			}
 			else if (lastLong < 90 && solarLong > 90 && solarLong < 105)
 			{
 				/* Summer solstice occurred */
-				timeEquinox = find_equinox(time - timeInterval, time, lastLong, solarLong, 90);
+				timeEquinox = find_equinox(Ephcom, time - timeInterval, time, lastLong, solarLong, 90);
 				MyPrint.Prefix = string("[SUM] ");
 			}
 			else if (lastLong < 180 && solarLong > 180 && solarLong < 195)
 			{
 				/* Autumn equinox occurred */
-				timeEquinox = find_equinox(time - timeInterval, time, lastLong, solarLong, 180);
+				timeEquinox = find_equinox(Ephcom, time - timeInterval, time, lastLong, solarLong, 180);
 				MyPrint.Prefix = string("[AUT] ");
 			}
 			else if (lastLong < 270 && solarLong > 270 && solarLong < 285)
 			{
 				/* Winter solstice occurred */
-				timeEquinox = find_equinox(time - timeInterval, time, lastLong, solarLong, 270);
+				timeEquinox = find_equinox(Ephcom, time - timeInterval, time, lastLong, solarLong, 270);
 				MyPrint.Prefix = string("[WIN] ");
 			}
 			computeEphem(timeEquinox, false);
@@ -438,14 +314,22 @@ void MarsOpp::computeEphem(double timeOpp, bool prettyPrint)
 	 * Based on 'jpleph_compute_de405' in the libJPLEPH ver1.
 	 */
 	jpl_PosData observables;
-	Ephcom.computeDE(EphcomID, timeOpp, &observables);
+	if (Ephcom.computeDE(EphcomID, timeOpp, &observables) != 0)
+	{
+		ephcomErrStat = 1;
+	}
 
 	/*
 	 * Calculates geocentric ecliptic coords at the specified
 	 * time and J2000.0 equinox.
 	 */
 	jpl_PosDataVer2 geoData;
-	Ephcom.computeGeocentricPos(EphcomID, timeOpp, &geoData);
+	if (Ephcom.computeGeocentricPos(EphcomID, timeOpp, &geoData) != 0)
+	{
+		ephcomErrStat = 1;
+	}
+	jpl_PosDataVer2 geoData2;
+	Ephcom.computeGeocentricPos(Ephcom.getSecondaryObject(), timeOpp, &geoData2);
 
 	if (MyPrint.hasFlag(Printing::PRINT_FLAG_LIST))
 	{
@@ -457,8 +341,11 @@ void MarsOpp::computeEphem(double timeOpp, bool prettyPrint)
 	 * time and J2000.0 equinox.
 	 */
 	jpl_PosDataVer2 helioData;
-	Ephcom.computeHeliocentricPos(EphcomID, timeOpp, &helioData);
 	jpl_PosDataVer2 posSun;
+	if (Ephcom.computeHeliocentricPos(EphcomID, timeOpp, &helioData) != 0)
+	{
+		ephcomErrStat = 1;
+	}
 
 	if (EphcomID == EPHCOM_MARS)
 	{
@@ -480,7 +367,10 @@ void MarsOpp::computeEphem(double timeOpp, bool prettyPrint)
 		data.setTime(timeOpp);
 		data.rHelio = observables.dist_Helio;
 		data.rGeo = geoData.radius;
-		data.longitudeCM = longitudeCM(geoData, timeOpp, calcLightDelay(geoData.radius));
+		if (EphcomID == EPHCOM_MARS)
+		{
+			data.longitudeCM = longitudeCM(geoData, timeOpp, calcLightDelay(geoData.radius));
+		}
 
 		/* Heliocentric ecliptic long/lat and solar longitude/declination */
 		if (EphcomID != EPHCOM_SUN)
@@ -507,6 +397,8 @@ void MarsOpp::computeEphem(double timeOpp, bool prettyPrint)
 		item.Delta  = geoData.radius;
 		item.radius = observables.dist_Helio;
 		item.diameter = angularSize(item.Delta);
+		item.separation =
+		  60 * arc_length(geoData.longitude, geoData2.longitude, geoData.latitude, geoData2.latitude);
 		item.omega = longitudeCM(geoData, timeOpp, calcLightDelay(geoData.radius));
 		item.L_S = posSun.longitude;
 		item.D_S = posSun.latitude;
@@ -658,7 +550,8 @@ void calculateDataFromConfig(MarsOpp& planetOpp, LConfig& conf)
 	const int stepJDays = 7;
 
 	// Set the ephemeris/opposition search parameters
-	planetOpp.setObject( (ephcom_object) conf.ephcomID);
+	planetOpp.setObject( (ephcom_object) conf.ephcomID,
+	                     (ephcom_object) conf.secondaryID );
 
 	if (conf.snapshotMode)
 	{
@@ -676,7 +569,7 @@ void calculateDataFromConfig(MarsOpp& planetOpp, LConfig& conf)
 	if (numSteps > 1)
 	{
 		// Opposition search function
-		planetOpp.generateEphem(JDstart, stepJDays, numSteps, true);
+		planetOpp.generateEphem(JDstart, stepJDays, numSteps, false);
 	}
 	else
 	{
@@ -701,7 +594,7 @@ int main(int argc, char **argv)
 	else
 	{
 		// Find next Mars opposition after today's date
-		mars2020.setObject(EPHCOM_MARS);
+		mars2020.setObject(EPHCOM_MARS, EPHCOM_MERCURY /* none */ );
 		time_t today = time(NULL);
 		tm today_d = *gmtime(&today);
 		JDstart = JD_from_calendar_date(today_d.tm_mday, today_d.tm_mon + 1, today_d.tm_year + 1900);
@@ -785,3 +678,38 @@ double JD_from_calendar_date(double day, int month, int year)
 
 	return JD;
 }
+
+static inline
+double rad2deg(double radians)
+{
+	return 180.0 / M_PI * radians;
+}
+
+static inline
+double deg2rad(double degrees)
+{
+	return M_PI / 180.0 * degrees;
+}
+
+/* 'Haversine' function */
+static inline
+double hav(double theta)
+{
+	double s = sin(theta/2);
+	return s*s;
+}
+
+/* Inverse 'Haversine' function */
+static inline
+double ahav(double h)
+{
+	return 2 * asin(sqrt(h));
+}
+
+double arc_length(double a1, double a2, double d1, double d2)
+{
+	/* See Meeus, equation 17.5 */
+	double x = hav( deg2rad(d1-d2) ) + cos(deg2rad(d1)) * cos(deg2rad(d2)) * hav(deg2rad(a1 - a2));
+	return rad2deg(ahav(x));
+}
+

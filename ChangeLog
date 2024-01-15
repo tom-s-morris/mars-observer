@@ -1,6 +1,22 @@
 astro_sara_pp/calc/README
 =========================
 
+* EventsFinder.cpp
+* EventsFinder.h
+New file/namespace for methods to find oppositions, close approaches,
+conjunctions and so on. Add support for Jupiter/Saturn conjunctions such as
+the event on 2020 Dec 21.
+Replaces the EphemerisUtils namespace.
+* LReader.cpp
+Add 'secondary' keyword.
+* LibEphcom4.cpp
+Add DE441 ephemeris. Basic error handling.
+* MarsDataLogger.cpp
+Add separation between two planets to CSV table.
+* MarsOpp.cpp
+generateEphem: Fix loop exit condition using time range in JPL-DE header.
+computeEphem: Set error status if the Ephcom routines return an error.
+
 * Mars_Meeus_p291.lua
 Test calculation for Mars. CML is in error by 0.25 degree, mainly due to
 neglecting precession for both Earth and Mars.
