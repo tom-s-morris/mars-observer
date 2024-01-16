@@ -231,10 +231,13 @@ void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes,
 
 	if (mode & MODE_CONJUNCTION)
 	{
-		/* Look for conjunction */
+		/* Look for conjunctions.
+		 * Case (2) below finds conjunctions during retrograde motion of the
+		 * interior planet, i.e. triple conjunctions.
+		 */
 		double deltaLong = EventsFinder::conjunction_in_longitude(Ephcom, time);
-		//cout << std::setprecision (12) << time << ", " << deltaLong << endl;
-		if (deltaLong < 15 && deltaLong > 0 && lastDeltaConj < 0)
+		if ((deltaLong < 15 && deltaLong > 0 && lastDeltaConj < 0) ||
+		    (deltaLong > -15 && deltaLong < 0 && lastDeltaConj > 0))
 		{
 			double timeOpp = find_conjunction(Ephcom, time - timeInterval, time, lastDeltaConj, deltaLong);
 			MyPrint.Prefix = string("[CONJ]"); // mark 'conjunction'
@@ -302,7 +305,7 @@ void MarsOpp::generateEphem(double timeStart, double timeInterval, int numTimes,
 	}
 	} /* next time */
 
-	dataLog.writeToCSVFile("mars_data.csv");
+	dataLog.writeToCSVFile("data_logger.csv");
 }
 
 void MarsOpp::computeEphem(double timeOpp, bool prettyPrint)

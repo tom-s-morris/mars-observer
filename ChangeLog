@@ -1,6 +1,10 @@
 astro_sara_pp/calc/README
 =========================
 
+* MarsOpp.cpp
+Fix triple conjunctions. Find conjunctions during the retrograde motion
+of the interior planet.
+
 * EventsFinder.cpp
 * EventsFinder.h
 New file/namespace for methods to find oppositions, close approaches,
